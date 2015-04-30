@@ -31,13 +31,13 @@ def get_environment():
     return environment
 
 
-class Service:
+class Service(object):
 
     def __init__(self, name, environment,
                  skip_relations=["cluster", ]):
         self.name = name
         self.skip_relations = skip_relations
-        self.status = environment.environment.get("services")[self.name]
+        self.status = environment.environment.get("Services")[self.name]
         self.environment = environment
 
     def to_dict(self):
@@ -65,6 +65,7 @@ class Service:
 
     @property
     def constraints(self):
+        return None
         try:
             return run("juju get-constraints %s" % self.name).strip("\n")
         except:
@@ -72,6 +73,7 @@ class Service:
 
     @property
     def options(self):
+        return []
         config = load_yaml("juju get %s" % self.name)
         options = {}
         inc_defaults = self.environment.options.include_defaults
@@ -82,8 +84,8 @@ class Service:
 
     @property
     def relations(self):
-        if 'relations' in self.status:
-            for name, items in self.status.get('relations').items():
+        if 'Relations' in self.status:
+            for name, items in self.status.get('Relations').items():
                 if name not in self.skip_relations:
                     for item in items:
                         if self.name != item:
@@ -91,8 +93,8 @@ class Service:
 
     @property
     def units(self):
-        if 'units' in self.status:
-            return len(self.status.get("units"))
+        if 'Units' in self.status:
+            return len(self.status.get("Units") or [])
         return 1
 
     @property
@@ -103,7 +105,7 @@ class Service:
         format = self.environment.options.location_format
 
         if self.environment.options.include_charm_versions:
-            charm = self.status.get('charm')
+            charm = self.status.get('Charm')
         else:
             charm = re.sub("(.*)(\-[0-9]+)", r,
                            self.status.get('charm'))
@@ -117,26 +119,28 @@ class Service:
 
     @property
     def placement(self):
-        units = self.status.get('units', None)
+        units = self.status.get('Units', None)
         if units:
             if len(units) > 1:
-                return map(lambda x: x.get('machine'), units.values())
+                return map(lambda x: x.get('Machine'), units.values())
             else:
-                return units[units.keys()[0]].get('machine')
+                return units[units.keys()[0]].get('Machine')
         return None
 
 
-class Environment:
+class Environment(object):
 
-    def __init__(self, options):
+    def __init__(self, options, env_json=None):
         self.options = options
-        self.environment = load_yaml("juju status -e %s --format=yaml" %
-                                     self.options.environment)
+        self.environment = (
+            env_json or
+            load_yaml("juju status -e %s --format=yaml" %
+                      self.options.environment))
 
     @property
     def services(self):
         services = []
-        for service in self.environment.get('services').keys():
+        for service in self.environment.get('Services').keys():
             services.append(Service(service, self))
         return services
 
@@ -160,12 +164,7 @@ class Environment:
 
         output[self.options.environment]['relations'] = relations
 
-        dump = yaml.dump(output, default_flow_style=False)
-        if self.options.output:
-            with open(self.options.output, 'w+') as f:
-                f.write(dump)
-        else:
-            sys.stdout.write(dump)
+        return yaml.safe_dump(output, default_flow_style=False)
 
 
 def parse_options():
@@ -225,7 +224,13 @@ def parse_options():
 def main():
     options = parse_options()
     d = Environment(options)
-    d.deployerize()
+    dump = d.deployerize()
+    if options.output:
+        with open(options.output, 'w+') as f:
+            f.write(dump)
+    else:
+        sys.stdout.write(dump)
+
 
 if __name__ == "__main__":
     main()
